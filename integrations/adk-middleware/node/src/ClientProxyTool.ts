@@ -4,6 +4,9 @@ import { BaseTool } from '@google/adk';
  * Domain Entity: ClientProxyTool
  * Represents a tool that the Agent can invoke, but whose execution
  * is proxied to the AG-UI Client instead of running natively.
+ *
+ * Framework orchestration adapter by design: This module explicitly binds
+ * the vendor Google ADK SDK's Tooling capabilities to the internal representations.
  */
 export class ClientProxyTool extends BaseTool {
   constructor(name: string, description: string) {

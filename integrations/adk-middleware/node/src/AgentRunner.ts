@@ -14,13 +14,16 @@ export interface AgentRunnerOptions {
  * Aggregate Root: AgentRunner
  * Orchestrates the execution of a Google ADK Agent Session
  * and yields translated AG-UI events.
+ *
+ * Framework orchestration adapter by design: This module explicitly binds
+ * the vendor Google ADK SDK to the internal AG-UI protocol representations.
  */
 export class AgentRunner {
-  private agent?: BaseAgent;
-  private app?: App;
-  private appName: string;
-  private sessionService: BaseSessionService;
-  private translator: EventTranslator;
+  private readonly agent?: BaseAgent;
+  private readonly app?: App;
+  private readonly appName: string;
+  private readonly sessionService: BaseSessionService;
+  private readonly translator: EventTranslator;
 
   constructor(options: AgentRunnerOptions) {
     this.agent = options.agent;
@@ -70,14 +73,12 @@ export class AgentRunner {
       return "";
     }
 
-    let textToRun = "";
     const contentArray = lastUserMessage.content as Array<{type?: string, text?: string}>;
-    for (const part of contentArray) {
-      if (part.type === 'text' && part.text) {
-          textToRun += part.text;
-      }
-    }
-    return textToRun;
+
+    // PURE FUNCTIONAL TRANSFORM: Use reduce instead of mutable loop appending
+    return contentArray.reduce((acc, part) => {
+      return part.type === 'text' && part.text ? acc + part.text : acc;
+    }, "");
   }
 
   private async initializeSession(sessionId: string): Promise<void> {

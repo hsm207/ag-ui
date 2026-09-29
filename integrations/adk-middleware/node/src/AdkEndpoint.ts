@@ -10,6 +10,9 @@ export interface AdkEndpointOptions extends AgentRunnerOptions {
  * Infrastructure Adapter: Express HTTP Endpoint
  * Wraps the Domain's AgentRunner in a standard Express request handler,
  * providing the required SSE transport layer for the AG-UI Protocol.
+ *
+ * Framework orchestration adapter by design: This module explicitly binds
+ * the vendor Express Framework to the internal AG-UI protocol representations.
  */
 export function createAdkEndpoint(options: AdkEndpointOptions) {
   return async (req: Request, res: Response) => {

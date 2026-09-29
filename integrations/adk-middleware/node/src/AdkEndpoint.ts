@@ -69,6 +69,6 @@ function streamErrorEvent(err: unknown, res: Response, runId: string): void {
   } else if (typeof err === 'string') {
     msg = err;
   }
-  const errorEvent = { type: AgUiEventType.RUN_ERROR, runId, timestamp: Date.now().toString(), error: { message: msg } };
+  const errorEvent = { type: AgUiEventType.RUN_ERROR, runId, timestamp: Date.now(), error: { message: msg } };
   res.write(`data: ${JSON.stringify(errorEvent)}\n\n`);
 }

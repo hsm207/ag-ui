@@ -4,7 +4,7 @@ import { EventType } from '@ag-ui/core';
 
 /**
  * Tests for the EventTranslator Domain Service.
- * Validates the translation pipeline from ADK events to AG-UI events.
+ * Validates the translation pipeline from ADK events to AG-UI events via schemas.
  */
 describe('EventTranslator Domain Service', () => {
   const translator = new EventTranslator();
@@ -29,7 +29,7 @@ describe('EventTranslator Domain Service', () => {
     });
 
     /**
-     * Verifies text payload translation into 3 lifecycle events.
+     * Verifies text payload translation into 3 lifecycle events validated by schemas.
      */
     it('When the event contains text, Then it translates to an AG-UI text message lifecycle', () => {
       const iter = translator.translate({
@@ -66,7 +66,7 @@ describe('EventTranslator Domain Service', () => {
     });
 
     /**
-     * Verifies function call payload translates into three discrete lifecycle events.
+     * Verifies function call payload translates into three discrete lifecycle events validated by schemas.
      */
     it('When the event contains a functionCall, Then it translates to a full AG-UI Tool Calling lifecycle', () => {
       const iter = translator.translate({

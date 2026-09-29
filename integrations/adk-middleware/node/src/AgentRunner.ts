@@ -50,9 +50,9 @@ export class AgentRunner {
       }
     });
 
-    yield { type: AgUiEventType.RUN_STARTED, runId, timestamp: Date.now().toString() } as unknown as AgUiEvent;
+    yield { type: AgUiEventType.RUN_STARTED, runId, timestamp: Date.now() } as unknown as AgUiEvent;
     yield* this.translateEventStream(adkStream, runId);
-    yield { type: AgUiEventType.RUN_FINISHED, runId, timestamp: Date.now().toString(), outcome: { type: "success" } } as unknown as AgUiEvent;
+    yield { type: AgUiEventType.RUN_FINISHED, runId, timestamp: Date.now(), outcome: { type: "success" } } as unknown as AgUiEvent;
   }
 
   private createRunner(): Runner {

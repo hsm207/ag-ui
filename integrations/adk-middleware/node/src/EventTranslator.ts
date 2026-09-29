@@ -36,14 +36,14 @@ class TextPartTranslator implements IPartTranslator {
       type: AgUiEventType.TEXT_MESSAGE_START,
       runId,
       messageId,
-      timestamp: ts.toString()
+      timestamp: ts
     } as unknown as AgUiEvent;
 
     yield {
       type: AgUiEventType.TEXT_MESSAGE_CONTENT,
       runId,
       messageId,
-      timestamp: ts.toString(),
+      timestamp: ts,
       delta: part.text as string
     } as unknown as AgUiEvent;
 
@@ -51,7 +51,7 @@ class TextPartTranslator implements IPartTranslator {
       type: AgUiEventType.TEXT_MESSAGE_END,
       runId,
       messageId,
-      timestamp: ts.toString()
+      timestamp: ts
     } as unknown as AgUiEvent;
   }
 }
@@ -70,7 +70,7 @@ class FunctionCallPartTranslator implements IPartTranslator {
       type: AgUiEventType.TOOL_CALL_START,
       runId,
       toolCallId,
-      timestamp: ts.toString(),
+      timestamp: ts,
       toolName: funcCall.name || 'unknown'
     } as unknown as AgUiEvent;
 
@@ -78,7 +78,7 @@ class FunctionCallPartTranslator implements IPartTranslator {
       type: AgUiEventType.TOOL_CALL_ARGS,
       runId,
       toolCallId,
-      timestamp: ts.toString(),
+      timestamp: ts,
       delta: JSON.stringify(funcCall.args || {})
     } as unknown as AgUiEvent;
 
@@ -86,7 +86,7 @@ class FunctionCallPartTranslator implements IPartTranslator {
       type: AgUiEventType.TOOL_CALL_END,
       runId,
       toolCallId,
-      timestamp: ts.toString()
+      timestamp: ts
     } as unknown as AgUiEvent;
   }
 }

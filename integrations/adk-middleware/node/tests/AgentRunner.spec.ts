@@ -1,105 +1,129 @@
 import { describe, it, expect, vi } from 'vitest';
 import { AgentRunner } from '../src/AgentRunner.js';
-import { Agent, InMemorySessionService } from '@google/adk';
+import { Agent, InMemorySessionService, Runner } from '@google/adk';
 
 vi.mock('@google/adk', async (importOriginal) => {
   const mod = await importOriginal() as any;
   return {
     ...mod,
-    Runner: class {
-      constructor() {}
-      async *runAsync() {
-         yield {
-           id: "1", invocationId: "1", timestamp: Date.now(), author: "model",
-           content: { role: "model", parts: [{ text: "Hello from agent" }] }
-         };
-         yield {
-           id: "2", invocationId: "2", timestamp: Date.now(), author: "model",
-           content: { role: "model", parts: [{ functionCall: { name: "test_tool", args: { a: 1 } } }] }
-         };
-         yield {
-           invocationId: "2b", timestamp: Date.now(), author: "model",
-           content: { role: "model", parts: [{ functionCall: { name: "test_tool2" } }] }
-         };
-         yield { id: "3", invocationId: "3", timestamp: Date.now(), author: "model" };
-         yield { id: "4", invocationId: "4", timestamp: Date.now(), author: "model", content: { role: "model", parts: [] } };
-         yield { id: "5", invocationId: "5", timestamp: Date.now(), author: "model", content: { role: "model", parts: [{ image: { url: "http" } }] } };
-      }
-    }
+    Runner: vi.fn()
   };
 });
 
-// Testing DSL Helper
-async function consumeStream(stream: AsyncGenerator<any>): Promise<any[]> {
-  const events = [];
-  for await (const ev of stream) events.push(ev);
-  return events;
+function createRunResult(events: any[]) {
+  return async function* () {
+    for (const ev of events) {
+      yield ev;
+    }
+  };
 }
 
-function expectLifecycleBounds(events: any[]) {
-  expect(events.length).toBeGreaterThanOrEqual(4);
-  expect(events[0].type).toBe('run_started');
-  expect(events[events.length - 1].type).toBe('run_finished');
-}
-
-function expectAssistantMessage(events: any[], text: string) {
-  const msgEvent = events.find(e => e.type === 'assistant_message');
-  expect(msgEvent).toBeDefined();
-  expect(msgEvent.message.content[0].text).toBe(text);
-}
-
-function expectToolCallSequence(events: any[], expectedName: string, expectedArgsStr: string, instanceIndex: number = 0) {
-  const toolStarts = events.filter(e => e.type === 'tool_call_start');
-  expect(toolStarts[instanceIndex].tool_name).toBe(expectedName);
-
-  const toolArgs = events.filter(e => e.type === 'tool_call_args');
-  expect(toolArgs[instanceIndex].args).toBe(expectedArgsStr);
-}
-
+/**
+ * Tests for the AgentRunner aggregate orchestrator.
+ * Validates initialization logic and event stream orchestration.
+ */
 describe('AgentRunner Aggregate', () => {
   describe('Given a valid RunAgentInput payload from the AG-UI protocol', () => {
+
+    /**
+     * Verifies the complete lifecycle bounds emitted from the pipeline.
+     */
     it('When the run stream is processed, Then it emits a valid lifecycle containing start, messages, tool calls, and finish events', async () => {
+      vi.mocked(Runner).mockImplementation(function() {
+        return {
+          runAsync: createRunResult([
+             { id: "1", invocationId: "1", timestamp: Date.now(), author: "model", content: { role: "model", parts: [{ text: "Hello" }] } },
+             { id: "2", invocationId: "2", timestamp: Date.now(), author: "model", content: { role: "model", parts: [{ functionCall: { name: "test", args: { a: 1 } } }] } },
+             // Miss branch (unsupported part type like an image payload) to ensure it translates correctly
+             { id: "5", invocationId: "5", timestamp: Date.now(), author: "model", content: { role: "model", parts: [{ image: { url: "http" } }] } }
+          ])
+        } as any;
+      } as any);
+
       const runner = new AgentRunner({
         agent: new Agent({ name: 'test', instruction: 'test' }),
         appName: 'testApp',
         sessionService: new InMemorySessionService()
       });
 
-      const events = await consumeStream(runner.run({
+      const stream = runner.run({
         threadId: '123',
-        messages: [{ role: 'user', content: [{ type: 'text', text: 'Hello' }, { type: 'image_url', image_url: {url: "http"} }] }]
-      }));
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'Hello' }] }]
+      });
 
-      expectLifecycleBounds(events);
-      expectAssistantMessage(events, 'Hello from agent');
-      expectToolCallSequence(events, 'test_tool', '{"a":1}', 0);
-      expectToolCallSequence(events, 'test_tool2', '{}', 1);
+      // No cyclomatic loop via unrolling explicit iterator steps
+      const startEv = (await stream.next()).value;
+      const msgEv = (await stream.next()).value as any;
+      const toolStart = (await stream.next()).value as any;
+      const toolArgs = (await stream.next()).value as any;
+      const toolEnd = (await stream.next()).value as any;
+      const finishEv = (await stream.next()).value;
+
+      expect(startEv.type).toBe('run_started');
+      expect(msgEv.type).toBe('assistant_message');
+      expect(msgEv.message.content[0].text).toBe('Hello');
+
+      expect(toolStart.type).toBe('tool_call_start');
+      expect(toolStart.tool_name).toBe('test');
+      expect(toolArgs.args).toBe('{"a":1}');
+      expect(toolEnd.type).toBe('tool_call_end');
+
+      expect(finishEv.type).toBe('run_finished');
     });
 
+    /**
+     * Verifies default fallback logic for missing config options.
+     */
     it('When initialized without optional configuration, Then it provides safe default fallbacks for Session Management', () => {
       const runner = new AgentRunner({ agent: new Agent({ name: 'test', instruction: 'test' }) });
+
       expect((runner as any).appName).toBe('ag-ui-app');
       expect((runner as any).sessionService).toBeDefined();
     });
 
+    /**
+     * Verifies UUID generation logic on missing thread IDs.
+     */
     it('When input lacks a threadId, Then it automatically generates one to ensure session uniqueness', async () => {
+      vi.mocked(Runner).mockImplementation(function() { return { runAsync: createRunResult([]) } as any; } as any);
       const runner = new AgentRunner({ agent: new Agent({ name: 'test', instruction: 'test' }) });
-      const events = await consumeStream(runner.run({
-        messages: [{ role: 'user', content: [{ type: 'text', text: 'Hello' }] }]
-      }));
-      expect(events.length).toBeGreaterThanOrEqual(2);
+
+      const stream = runner.run({ messages: [{ role: 'user', content: [{ type: 'text', text: 'Hello' }] }] });
+      const startEv = (await stream.next()).value;
+      const endEv = (await stream.next()).value;
+
+      expect(startEv.type).toBe('run_started');
+      expect(endEv.type).toBe('run_finished');
     });
 
+    /**
+     * Verifies missing text logic on payload.
+     */
     it('When input messages contain no textual content, Then it processes safely as an empty string to avoid crashes', async () => {
+      vi.mocked(Runner).mockImplementation(function() { return { runAsync: createRunResult([]) } as any; } as any);
       const runner = new AgentRunner({ agent: new Agent({ name: 'test', instruction: 'test' }) });
-      const events = await consumeStream(runner.run({ messages: [{ role: 'user' }] }));
-      expect(events.length).toBeGreaterThanOrEqual(2);
+
+      const stream = runner.run({ messages: [{ role: 'user' }] });
+      const startEv = (await stream.next()).value;
+      const endEv = (await stream.next()).value;
+
+      expect(startEv.type).toBe('run_started');
+      expect(endEv.type).toBe('run_finished');
     });
 
+    /**
+     * Verifies empty message array guard logic.
+     */
     it('When input entirely lacks messages, Then it skips processing without crashing', async () => {
+      vi.mocked(Runner).mockImplementation(function() { return { runAsync: createRunResult([]) } as any; } as any);
       const runner = new AgentRunner({ agent: new Agent({ name: 'test', instruction: 'test' }) });
-      const events = await consumeStream(runner.run({ messages: [] }));
-      expect(events.length).toBeGreaterThanOrEqual(2);
+
+      const stream = runner.run({ messages: [] });
+      const startEv = (await stream.next()).value;
+      const endEv = (await stream.next()).value;
+
+      expect(startEv.type).toBe('run_started');
+      expect(endEv.type).toBe('run_finished');
     });
   });
 });

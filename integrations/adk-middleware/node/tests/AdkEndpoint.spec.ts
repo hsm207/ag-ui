@@ -45,20 +45,20 @@ describe('ExpressAdapter (AdkEndpoint)', () => {
       vi.mocked(AgentRunner).mockImplementation(function() {
         return {
           run: async function* () {
-            yield { type: 'run_started' };
-            yield { type: 'run_finished' };
+            yield { type: 'RUN_STARTED' };
+            yield { type: 'RUN_FINISHED' };
           }
         } as any;
       } as any);
 
       const handler = createAdkEndpoint({ extractHeaders: ['x-user-id'] });
-      const req = { body: { messages: [{}] } } as any;
+      const req = { body: { messages: [{}] }, threadId: 'thread1' } as any;
       const res = createMockResponse();
 
       await handler(req, res);
 
-      expect(res.write).toHaveBeenCalledWith('data: {"type":"run_started"}\n\n');
-      expect(res.write).toHaveBeenCalledWith('data: {"type":"run_finished"}\n\n');
+      expect(res.write).toHaveBeenCalledWith('data: {"type":"RUN_STARTED"}\n\n');
+      expect(res.write).toHaveBeenCalledWith('data: {"type":"RUN_FINISHED"}\n\n');
       expect(res.end).toHaveBeenCalled();
     });
 
@@ -75,12 +75,13 @@ describe('ExpressAdapter (AdkEndpoint)', () => {
       } as any);
 
       const handler = createAdkEndpoint({});
-      const req = { body: { messages: [{}] } } as any;
+      const req = { body: { messages: [{}] }, threadId: 'thread1' } as any;
       const res = createMockResponse();
 
       await handler(req, res);
 
-      expect(res.write).toHaveBeenCalledWith('data: {"type":"run_error","message":"Test error"}\n\n');
+      expect(res.write).toHaveBeenCalledWith(expect.stringContaining('RUN_ERROR'));
+      expect(res.write).toHaveBeenCalledWith(expect.stringContaining('Test error'));
       expect(res.end).toHaveBeenCalled();
     });
 
@@ -97,12 +98,13 @@ describe('ExpressAdapter (AdkEndpoint)', () => {
       } as any);
 
       const handler = createAdkEndpoint({});
-      const req = { body: { messages: [{}] } } as any;
+      const req = { body: { messages: [{}] }, threadId: 'thread1' } as any;
       const res = createMockResponse();
 
       await handler(req, res);
 
-      expect(res.write).toHaveBeenCalledWith('data: {"type":"run_error","message":"string error"}\n\n');
+      expect(res.write).toHaveBeenCalledWith(expect.stringContaining('RUN_ERROR'));
+      expect(res.write).toHaveBeenCalledWith(expect.stringContaining('string error'));
       expect(res.end).toHaveBeenCalled();
     });
 
@@ -119,12 +121,13 @@ describe('ExpressAdapter (AdkEndpoint)', () => {
       } as any);
 
       const handler = createAdkEndpoint({});
-      const req = { body: { messages: [{}] } } as any;
+      const req = { body: { messages: [{}] }, threadId: 'thread1' } as any;
       const res = createMockResponse();
 
       await handler(req, res);
 
-      expect(res.write).toHaveBeenCalledWith('data: {"type":"run_error","message":"Unknown error"}\n\n');
+      expect(res.write).toHaveBeenCalledWith(expect.stringContaining('RUN_ERROR'));
+      expect(res.write).toHaveBeenCalledWith(expect.stringContaining('Unknown error'));
       expect(res.end).toHaveBeenCalled();
     });
   });

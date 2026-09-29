@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { AgentRunner } from '../src/AgentRunner.js';
 import { Agent, InMemorySessionService, Runner } from '@google/adk';
+import { EventType } from '@ag-ui/core';
 
 vi.mock('@google/adk', async (importOriginal) => {
   const mod = await importOriginal() as any;
@@ -34,7 +35,6 @@ describe('AgentRunner Aggregate', () => {
           runAsync: createRunResult([
              { id: "1", invocationId: "1", timestamp: Date.now(), author: "model", content: { role: "model", parts: [{ text: "Hello" }] } },
              { id: "2", invocationId: "2", timestamp: Date.now(), author: "model", content: { role: "model", parts: [{ functionCall: { name: "test", args: { a: 1 } } }] } },
-             // Miss branch (unsupported part type like an image payload) to ensure it translates correctly
              { id: "5", invocationId: "5", timestamp: Date.now(), author: "model", content: { role: "model", parts: [{ image: { url: "http" } }] } }
           ])
         } as any;
@@ -51,24 +51,27 @@ describe('AgentRunner Aggregate', () => {
         messages: [{ role: 'user', content: [{ type: 'text', text: 'Hello' }] }]
       });
 
-      // No cyclomatic loop via unrolling explicit iterator steps
-      const startEv = (await stream.next()).value;
-      const msgEv = (await stream.next()).value as any;
+      const startEv = (await stream.next()).value as any;
+      const txtStartEv = (await stream.next()).value as any;
+      const txtContentEv = (await stream.next()).value as any;
+      const txtEndEv = (await stream.next()).value as any;
       const toolStart = (await stream.next()).value as any;
       const toolArgs = (await stream.next()).value as any;
       const toolEnd = (await stream.next()).value as any;
-      const finishEv = (await stream.next()).value;
+      const finishEv = (await stream.next()).value as any;
 
-      expect(startEv.type).toBe('run_started');
-      expect(msgEv.type).toBe('assistant_message');
-      expect(msgEv.message.content[0].text).toBe('Hello');
+      expect(startEv.type).toBe(EventType.RUN_STARTED);
+      expect(txtStartEv.type).toBe(EventType.TEXT_MESSAGE_START);
+      expect(txtContentEv.type).toBe(EventType.TEXT_MESSAGE_CONTENT);
+      expect(txtContentEv.delta).toBe('Hello');
+      expect(txtEndEv.type).toBe(EventType.TEXT_MESSAGE_END);
 
-      expect(toolStart.type).toBe('tool_call_start');
-      expect(toolStart.tool_name).toBe('test');
-      expect(toolArgs.args).toBe('{"a":1}');
-      expect(toolEnd.type).toBe('tool_call_end');
+      expect(toolStart.type).toBe(EventType.TOOL_CALL_START);
+      expect(toolStart.toolName).toBe('test');
+      expect(toolArgs.delta).toBe('{"a":1}');
+      expect(toolEnd.type).toBe(EventType.TOOL_CALL_END);
 
-      expect(finishEv.type).toBe('run_finished');
+      expect(finishEv.type).toBe(EventType.RUN_FINISHED);
     });
 
     /**
@@ -89,11 +92,11 @@ describe('AgentRunner Aggregate', () => {
       const runner = new AgentRunner({ agent: new Agent({ name: 'test', instruction: 'test' }) });
 
       const stream = runner.run({ messages: [{ role: 'user', content: [{ type: 'text', text: 'Hello' }] }] });
-      const startEv = (await stream.next()).value;
-      const endEv = (await stream.next()).value;
+      const startEv = (await stream.next()).value as any;
+      const endEv = (await stream.next()).value as any;
 
-      expect(startEv.type).toBe('run_started');
-      expect(endEv.type).toBe('run_finished');
+      expect(startEv.type).toBe(EventType.RUN_STARTED);
+      expect(endEv.type).toBe(EventType.RUN_FINISHED);
     });
 
     /**
@@ -104,11 +107,11 @@ describe('AgentRunner Aggregate', () => {
       const runner = new AgentRunner({ agent: new Agent({ name: 'test', instruction: 'test' }) });
 
       const stream = runner.run({ messages: [{ role: 'user' }] });
-      const startEv = (await stream.next()).value;
-      const endEv = (await stream.next()).value;
+      const startEv = (await stream.next()).value as any;
+      const endEv = (await stream.next()).value as any;
 
-      expect(startEv.type).toBe('run_started');
-      expect(endEv.type).toBe('run_finished');
+      expect(startEv.type).toBe(EventType.RUN_STARTED);
+      expect(endEv.type).toBe(EventType.RUN_FINISHED);
     });
 
     /**
@@ -119,11 +122,44 @@ describe('AgentRunner Aggregate', () => {
       const runner = new AgentRunner({ agent: new Agent({ name: 'test', instruction: 'test' }) });
 
       const stream = runner.run({ messages: [] });
-      const startEv = (await stream.next()).value;
-      const endEv = (await stream.next()).value;
+      const startEv = (await stream.next()).value as any;
+      const endEv = (await stream.next()).value as any;
 
-      expect(startEv.type).toBe('run_started');
-      expect(endEv.type).toBe('run_finished');
+      expect(startEv.type).toBe(EventType.RUN_STARTED);
+      expect(endEv.type).toBe(EventType.RUN_FINISHED);
+    });
+
+    /**
+     * Verifies string message content extraction.
+     */
+    it('When input messages contain string content, Then it processes safely as a string without crashing', async () => {
+      vi.mocked(Runner).mockImplementation(function() { return { runAsync: createRunResult([]) } as any; } as any);
+      const runner = new AgentRunner({ agent: new Agent({ name: 'test', instruction: 'test' }) });
+
+      const stream = runner.run({ messages: [{ role: 'user', content: 'hello as string' }] });
+      const startEv = (await stream.next()).value as any;
+      const endEv = (await stream.next()).value as any;
+
+      expect(startEv.type).toBe(EventType.RUN_STARTED);
+      expect(endEv.type).toBe(EventType.RUN_FINISHED);
+    });
+
+    /**
+     * Verifies existing session handling.
+     */
+    it('When session already exists, Then it does not try to recreate it', async () => {
+      vi.mocked(Runner).mockImplementation(function() { return { runAsync: createRunResult([]) } as any; } as any);
+      const sessionService = new InMemorySessionService();
+      await sessionService.createSession({ appName: 'testApp', userId: 'default_user', sessionId: '123' });
+
+      const runner = new AgentRunner({ agent: new Agent({ name: 'test', instruction: 'test' }), appName: 'testApp', sessionService });
+
+      const stream = runner.run({ threadId: '123', messages: [{ role: 'user', content: 'hello as string' }] });
+      const startEv = (await stream.next()).value as any;
+      const endEv = (await stream.next()).value as any;
+
+      expect(startEv.type).toBe(EventType.RUN_STARTED);
+      expect(endEv.type).toBe(EventType.RUN_FINISHED);
     });
   });
 });

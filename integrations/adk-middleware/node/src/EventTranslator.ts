@@ -1,4 +1,7 @@
-import { BaseEvent as AgUiEvent } from '@ag-ui/core';
+import {
+  BaseEvent as AgUiEvent,
+  EventType as AgUiEventType
+} from '@ag-ui/core';
 
 export interface AdkEvent {
   id: string;
@@ -17,7 +20,7 @@ export interface AdkEvent {
  */
 interface IPartTranslator {
   canHandle(part: Record<string, unknown>): boolean;
-  translate(part: Record<string, unknown>, adkEvent: AdkEvent): IterableIterator<AgUiEvent>;
+  translate(part: Record<string, unknown>, adkEvent: AdkEvent, runId: string): IterableIterator<AgUiEvent>;
 }
 
 class TextPartTranslator implements IPartTranslator {
@@ -25,17 +28,30 @@ class TextPartTranslator implements IPartTranslator {
     return typeof part.text === 'string';
   }
 
-  *translate(part: Record<string, unknown>, adkEvent: AdkEvent): IterableIterator<AgUiEvent> {
+  *translate(part: Record<string, unknown>, adkEvent: AdkEvent, runId: string): IterableIterator<AgUiEvent> {
+    const messageId = adkEvent.id || Math.random().toString();
+    const ts = adkEvent.timestamp;
+
     yield {
-      type: 'assistant_message',
-      timestamp: adkEvent.timestamp.toString(),
-      message: {
-         type: 'assistant_message',
-         id: adkEvent.id || Math.random().toString(),
-         content: [
-           { type: 'text', text: part.text as string }
-         ]
-      }
+      type: AgUiEventType.TEXT_MESSAGE_START,
+      runId,
+      messageId,
+      timestamp: ts.toString()
+    } as unknown as AgUiEvent;
+
+    yield {
+      type: AgUiEventType.TEXT_MESSAGE_CONTENT,
+      runId,
+      messageId,
+      timestamp: ts.toString(),
+      delta: part.text as string
+    } as unknown as AgUiEvent;
+
+    yield {
+      type: AgUiEventType.TEXT_MESSAGE_END,
+      runId,
+      messageId,
+      timestamp: ts.toString()
     } as unknown as AgUiEvent;
   }
 }
@@ -45,28 +61,32 @@ class FunctionCallPartTranslator implements IPartTranslator {
     return typeof part.functionCall === 'object' && part.functionCall !== null;
   }
 
-  *translate(part: Record<string, unknown>, adkEvent: AdkEvent): IterableIterator<AgUiEvent> {
+  *translate(part: Record<string, unknown>, adkEvent: AdkEvent, runId: string): IterableIterator<AgUiEvent> {
     const funcCall = part.functionCall as { name?: string; args?: unknown };
     const toolCallId = adkEvent.id || Math.random().toString();
+    const ts = adkEvent.timestamp;
 
     yield {
-      type: 'tool_call_start',
-      timestamp: adkEvent.timestamp.toString(),
-      tool_call_id: toolCallId,
-      tool_name: funcCall.name || 'unknown'
+      type: AgUiEventType.TOOL_CALL_START,
+      runId,
+      toolCallId,
+      timestamp: ts.toString(),
+      toolName: funcCall.name || 'unknown'
     } as unknown as AgUiEvent;
 
     yield {
-      type: 'tool_call_args',
-      timestamp: adkEvent.timestamp.toString(),
-      tool_call_id: toolCallId,
-      args: JSON.stringify(funcCall.args || {})
+      type: AgUiEventType.TOOL_CALL_ARGS,
+      runId,
+      toolCallId,
+      timestamp: ts.toString(),
+      delta: JSON.stringify(funcCall.args || {})
     } as unknown as AgUiEvent;
 
     yield {
-      type: 'tool_call_end',
-      timestamp: adkEvent.timestamp.toString(),
-      tool_call_id: toolCallId
+      type: AgUiEventType.TOOL_CALL_END,
+      runId,
+      toolCallId,
+      timestamp: ts.toString()
     } as unknown as AgUiEvent;
   }
 }
@@ -85,7 +105,7 @@ export class EventTranslator {
     ];
   }
 
-  public *translate(adkEvent: AdkEvent): IterableIterator<AgUiEvent> {
+  public *translate(adkEvent: AdkEvent, runId: string): IterableIterator<AgUiEvent> {
     if (!adkEvent.content || !Array.isArray(adkEvent.content.parts) || adkEvent.content.parts.length === 0) {
       return;
     }
@@ -94,8 +114,8 @@ export class EventTranslator {
 
     for (const strategy of this.strategies) {
       if (strategy.canHandle(firstPart)) {
-        yield* strategy.translate(firstPart, adkEvent);
-        return; // Only execute the first matching strategy to prevent duplicates
+        yield* strategy.translate(firstPart, adkEvent, runId);
+        return;
       }
     }
   }

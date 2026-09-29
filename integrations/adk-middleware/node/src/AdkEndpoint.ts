@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { RunAgentInput } from '@ag-ui/core';
+import { RunAgentInput, EventType as AgUiEventType } from '@ag-ui/core';
 import { AgentRunner, AgentRunnerOptions } from './AgentRunner.js';
 
 export interface AdkEndpointOptions extends AgentRunnerOptions {
@@ -29,7 +29,7 @@ export function createAdkEndpoint(options: AdkEndpointOptions) {
     try {
       await streamRunnerEvents(runner, input, res);
     } catch (err: unknown) {
-      streamErrorEvent(err, res);
+      streamErrorEvent(err, res, input.threadId || 'unknown');
     } finally {
       res.end();
     }
@@ -62,13 +62,13 @@ async function streamRunnerEvents(runner: AgentRunner, input: RunAgentInput, res
   }
 }
 
-function streamErrorEvent(err: unknown, res: Response): void {
+function streamErrorEvent(err: unknown, res: Response, runId: string): void {
   let msg = 'Unknown error';
   if (err instanceof Error) {
     msg = err.message;
   } else if (typeof err === 'string') {
     msg = err;
   }
-  const errorEvent = { type: 'run_error', message: msg };
+  const errorEvent = { type: AgUiEventType.RUN_ERROR, runId, timestamp: Date.now().toString(), error: { message: msg } };
   res.write(`data: ${JSON.stringify(errorEvent)}\n\n`);
 }

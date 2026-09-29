@@ -1,5 +1,5 @@
-import { BaseAgent, Runner, BaseSessionService, App, InMemorySessionService, RunnableNode } from '@google/adk';
-import { RunAgentInput, BaseEvent as AgUiEvent } from '@ag-ui/core';
+import { BaseAgent, Runner, BaseSessionService, App, InMemorySessionService } from '@google/adk';
+import { RunAgentInput, BaseEvent as AgUiEvent, EventType as AgUiEventType } from '@ag-ui/core';
 import { EventTranslator, AdkEvent } from './EventTranslator.js';
 import crypto from 'crypto';
 
@@ -36,6 +36,7 @@ export class AgentRunner {
   public async *run(input: RunAgentInput): AsyncGenerator<AgUiEvent, void, unknown> {
     const runner = this.createRunner();
     const sessionId = this.resolveSessionId(input);
+    const runId = crypto.randomUUID();
     const textToRun = this.extractUserText(input);
 
     await this.initializeSession(sessionId);
@@ -49,15 +50,16 @@ export class AgentRunner {
       }
     });
 
-    yield this.createRunStartedEvent();
-    yield* this.translateEventStream(adkStream);
-    yield this.createRunFinishedEvent();
+    yield { type: AgUiEventType.RUN_STARTED, runId, timestamp: Date.now().toString() } as unknown as AgUiEvent;
+    yield* this.translateEventStream(adkStream, runId);
+    yield { type: AgUiEventType.RUN_FINISHED, runId, timestamp: Date.now().toString(), outcome: { type: "success" } } as unknown as AgUiEvent;
   }
 
   private createRunner(): Runner {
-    const runnableNode: RunnableNode = (this.app || this.agent) as unknown as RunnableNode;
+    // Finding 3: RunnableNode is internal, pass directly in config without cast hack
     return new Runner({
-      agent: runnableNode,
+      agent: this.agent,
+      app: this.app,
       appName: this.appName,
       sessionService: this.sessionService
     });
@@ -68,38 +70,45 @@ export class AgentRunner {
   }
 
   private extractUserText(input: RunAgentInput): string {
+    if (!input.messages || input.messages.length === 0) {
+      return "";
+    }
     const lastUserMessage = input.messages[input.messages.length - 1];
     if (!lastUserMessage || !lastUserMessage.content) {
       return "";
     }
 
-    const contentArray = lastUserMessage.content as Array<{type?: string, text?: string}>;
+    // Finding 4: Handle string format directly vs ContentPart format
+    if (typeof lastUserMessage.content === 'string') {
+      return lastUserMessage.content;
+    }
 
-    // PURE FUNCTIONAL TRANSFORM: Use reduce instead of mutable loop appending
+    const contentArray = lastUserMessage.content as Array<{type?: string, text?: string}>;
     return contentArray.reduce((acc, part) => {
       return part.type === 'text' && part.text ? acc + part.text : acc;
     }, "");
   }
 
   private async initializeSession(sessionId: string): Promise<void> {
-    await this.sessionService.createSession({
-       appName: this.appName,
-       userId: "default_user",
-       sessionId
+    // Finding 5: Must use getSession or createSession cleanly to avoid churn
+    const existing = await this.sessionService.getSession({
+      appName: this.appName,
+      userId: "default_user",
+      sessionId
     });
+
+    if (!existing) {
+      await this.sessionService.createSession({
+         appName: this.appName,
+         userId: "default_user",
+         sessionId
+      });
+    }
   }
 
-  private createRunStartedEvent(): AgUiEvent {
-    return { type: 'run_started', timestamp: Date.now().toString() } as unknown as AgUiEvent;
-  }
-
-  private createRunFinishedEvent(): AgUiEvent {
-    return { type: 'run_finished', timestamp: Date.now().toString() } as unknown as AgUiEvent;
-  }
-
-  private async *translateEventStream(adkStream: AsyncGenerator<unknown, void, unknown>): AsyncGenerator<AgUiEvent, void, unknown> {
+  private async *translateEventStream(adkStream: AsyncGenerator<unknown, void, unknown>, runId: string): AsyncGenerator<AgUiEvent, void, unknown> {
     for await (const adkEvent of adkStream) {
-      const translatedEvents = this.translator.translate(adkEvent as unknown as AdkEvent);
+      const translatedEvents = this.translator.translate(adkEvent as unknown as AdkEvent, runId);
       for (const agUiEvent of translatedEvents) {
         yield agUiEvent;
       }

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { EventTranslator } from '../src/EventTranslator.js';
+import { EventType } from '@ag-ui/core';
 
 /**
  * Tests for the EventTranslator Domain Service.
@@ -13,7 +14,7 @@ describe('EventTranslator Domain Service', () => {
      * Verifies graceful handling of malformed parts.
      */
     it('When the event lacks content parts, Then it is safely ignored', () => {
-      const iter = translator.translate({ id: '1', invocationId: '1', author: 'model', timestamp: 1 } as any);
+      const iter = translator.translate({ id: '1', invocationId: '1', author: 'model', timestamp: 1 } as any, 'run-1');
       const results = Array.from(iter);
       expect(results.length).toBe(0);
     });
@@ -22,27 +23,29 @@ describe('EventTranslator Domain Service', () => {
      * Verifies graceful handling of empty parts.
      */
     it('When the event parts are empty, Then it is safely ignored', () => {
-      const iter = translator.translate({ id: '1', invocationId: '1', author: 'model', timestamp: 1, content: { parts: [] } } as any);
+      const iter = translator.translate({ id: '1', invocationId: '1', author: 'model', timestamp: 1, content: { parts: [] } } as any, 'run-1');
       const results = Array.from(iter);
       expect(results.length).toBe(0);
     });
 
     /**
-     * Verifies text payload translation into an assistant_message event.
+     * Verifies text payload translation into 3 lifecycle events.
      */
-    it('When the event contains text, Then it translates to an AG-UI assistant_message event', () => {
+    it('When the event contains text, Then it translates to an AG-UI text message lifecycle', () => {
       const iter = translator.translate({
         id: '1',
         invocationId: '1',
         author: 'model',
         timestamp: 1,
         content: { parts: [{ text: 'Hello' }] }
-      } as any);
+      } as any, 'run-1');
 
-      const results = Array.from(iter);
+      const results = Array.from(iter) as any[];
 
-      expect(results.length).toBe(1);
-      expect(results[0].type).toBe('assistant_message');
+      expect(results.length).toBe(3);
+      expect(results[0].type).toBe(EventType.TEXT_MESSAGE_START);
+      expect(results[1].type).toBe(EventType.TEXT_MESSAGE_CONTENT);
+      expect(results[2].type).toBe(EventType.TEXT_MESSAGE_END);
     });
 
     /**
@@ -54,12 +57,12 @@ describe('EventTranslator Domain Service', () => {
         author: 'model',
         timestamp: 1,
         content: { parts: [{ text: 'Hello' }] }
-      } as any);
+      } as any, 'run-1');
 
-      const results = Array.from(iter);
+      const results = Array.from(iter) as any[];
 
-      expect(results.length).toBe(1);
-      expect((results[0] as any).message.id).toBeDefined();
+      expect(results.length).toBe(3);
+      expect(results[0].messageId).toBeDefined();
     });
 
     /**
@@ -72,14 +75,14 @@ describe('EventTranslator Domain Service', () => {
         author: 'model',
         timestamp: 1,
         content: { parts: [{ functionCall: { name: 'test', args: { a: 1 } } }] }
-      } as any);
+      } as any, 'run-1');
 
-      const results = Array.from(iter);
+      const results = Array.from(iter) as any[];
 
       expect(results.length).toBe(3);
-      expect(results[0].type).toBe('tool_call_start');
-      expect(results[1].type).toBe('tool_call_args');
-      expect(results[2].type).toBe('tool_call_end');
+      expect(results[0].type).toBe(EventType.TOOL_CALL_START);
+      expect(results[1].type).toBe(EventType.TOOL_CALL_ARGS);
+      expect(results[2].type).toBe(EventType.TOOL_CALL_END);
     });
 
     /**
@@ -92,12 +95,12 @@ describe('EventTranslator Domain Service', () => {
         author: 'model',
         timestamp: 1,
         content: { parts: [{ functionCall: { name: 'test' } }] }
-      } as any);
+      } as any, 'run-1');
 
-      const results = Array.from(iter);
+      const results = Array.from(iter) as any[];
 
       expect(results.length).toBe(3);
-      expect((results[1] as any).args).toBe('{}');
+      expect(results[1].delta).toBe('{}');
     });
 
     /**
@@ -110,12 +113,12 @@ describe('EventTranslator Domain Service', () => {
         author: 'model',
         timestamp: 1,
         content: { parts: [{ functionCall: { args: { a: 1 } } }] }
-      } as any);
+      } as any, 'run-1');
 
-      const results = Array.from(iter);
+      const results = Array.from(iter) as any[];
 
       expect(results.length).toBe(3);
-      expect((results[0] as any).tool_name).toBe('unknown');
+      expect(results[0].toolName).toBe('unknown');
     });
   });
 });

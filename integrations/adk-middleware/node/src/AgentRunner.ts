@@ -35,38 +35,37 @@ export class AgentRunner {
 
   public async *run(input: RunAgentInput): AsyncGenerator<AgUiEvent, void, unknown> {
     const runner = this.createRunner();
-    const sessionId = this.resolveSessionId(input);
+
+    // Fallback required by protocol if client sends no threadId
+    const threadId = input.threadId || crypto.randomUUID();
     const runId = crypto.randomUUID();
     const textToRun = this.extractUserText(input);
 
-    await this.initializeSession(sessionId);
+    await this.initializeSession(threadId);
 
     const adkStream = runner.runAsync({
       userId: "default_user",
-      sessionId,
+      sessionId: threadId,
       newMessage: {
         role: "user",
         parts: [{ text: textToRun }]
       }
     });
 
-    yield { type: AgUiEventType.RUN_STARTED, runId, timestamp: Date.now() } as unknown as AgUiEvent;
+    yield { type: AgUiEventType.RUN_STARTED, runId, threadId, timestamp: Date.now() } as unknown as AgUiEvent;
+
     yield* this.translateEventStream(adkStream, runId);
-    yield { type: AgUiEventType.RUN_FINISHED, runId, timestamp: Date.now(), outcome: { type: "success" } } as unknown as AgUiEvent;
+
+    yield { type: AgUiEventType.RUN_FINISHED, runId, threadId, timestamp: Date.now(), result: { type: "success" } } as unknown as AgUiEvent;
   }
 
   private createRunner(): Runner {
-    // Finding 3: RunnableNode is internal, pass directly in config without cast hack
     return new Runner({
       agent: this.agent,
       app: this.app,
       appName: this.appName,
       sessionService: this.sessionService
     });
-  }
-
-  private resolveSessionId(input: RunAgentInput): string {
-    return input.threadId || crypto.randomUUID();
   }
 
   private extractUserText(input: RunAgentInput): string {
@@ -78,7 +77,6 @@ export class AgentRunner {
       return "";
     }
 
-    // Finding 4: Handle string format directly vs ContentPart format
     if (typeof lastUserMessage.content === 'string') {
       return lastUserMessage.content;
     }
@@ -90,7 +88,6 @@ export class AgentRunner {
   }
 
   private async initializeSession(sessionId: string): Promise<void> {
-    // Finding 5: Must use getSession or createSession cleanly to avoid churn
     const existing = await this.sessionService.getSession({
       appName: this.appName,
       userId: "default_user",

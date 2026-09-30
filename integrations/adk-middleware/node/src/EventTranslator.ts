@@ -1,7 +1,4 @@
-import {
-  BaseEvent as AgUiEvent,
-  EventType as AgUiEventType
-} from '@ag-ui/core';
+import { BaseEvent as AgUiEvent, EventType as AgUiEventType } from '@ag-ui/core';
 
 export interface AdkEvent {
   id: string;

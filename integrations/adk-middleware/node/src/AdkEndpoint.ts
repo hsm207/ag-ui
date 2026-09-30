@@ -29,7 +29,9 @@ export function createAdkEndpoint(options: AdkEndpointOptions) {
     try {
       await streamRunnerEvents(runner, input, res);
     } catch (err: unknown) {
-      streamErrorEvent(err, res, input.threadId || 'unknown');
+      // Must generate threadId defensively if the domain threw early without generating one
+      const threadId = input.threadId || 'unknown';
+      streamErrorEvent(err, res, threadId);
     } finally {
       res.end();
     }
@@ -62,13 +64,15 @@ async function streamRunnerEvents(runner: AgentRunner, input: RunAgentInput, res
   }
 }
 
-function streamErrorEvent(err: unknown, res: Response, runId: string): void {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function streamErrorEvent(err: unknown, res: Response, _threadId: string): void {
   let msg = 'Unknown error';
   if (err instanceof Error) {
     msg = err.message;
   } else if (typeof err === 'string') {
     msg = err;
   }
-  const errorEvent = { type: AgUiEventType.RUN_ERROR, runId, timestamp: Date.now(), error: { message: msg } };
+  // RUN_ERROR Schema requires: type, message. (NO error object, NO runId requirement)
+  const errorEvent = { type: AgUiEventType.RUN_ERROR, message: msg, timestamp: Date.now() };
   res.write(`data: ${JSON.stringify(errorEvent)}\n\n`);
 }

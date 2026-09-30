@@ -118,7 +118,7 @@ describe('EventTranslator Domain Service', () => {
       const results = Array.from(iter) as any[];
 
       expect(results.length).toBe(3);
-      expect(results[0].toolName).toBe('unknown');
+      expect(results[0].toolCallName).toBe('unknown');
     });
   });
 });

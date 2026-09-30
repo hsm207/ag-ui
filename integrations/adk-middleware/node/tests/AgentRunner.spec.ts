@@ -70,7 +70,7 @@ describe('AgentRunner Aggregate', () => {
       expect(finishEv.type).toBe(EventType.RUN_FINISHED);
 
       expect(txtContentEv.delta).toBe('Hello');
-      expect(toolStart.toolName).toBe('test');
+      expect(toolStart.toolCallName).toBe('test');
       expect(typeof startEv.timestamp).toBe('number');
     });
 

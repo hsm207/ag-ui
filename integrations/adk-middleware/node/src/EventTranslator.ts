@@ -71,7 +71,7 @@ class FunctionCallPartTranslator implements IPartTranslator {
       runId,
       toolCallId,
       timestamp: ts,
-      toolName: funcCall.name || 'unknown'
+      toolCallName: funcCall.name || 'unknown'
     } as unknown as AgUiEvent;
 
     yield {

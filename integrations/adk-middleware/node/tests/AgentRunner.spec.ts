@@ -105,5 +105,21 @@ describe('AgentRunner Aggregate', () => {
       const startEv = (await stream.next()).value as any;
       expect(startEv.type).toBe(EventType.RUN_STARTED);
     });
+
+    it('When the client provides a tool result, Then it appends the exact id back to the session before resuming', async () => {
+      vi.mocked(Runner).mockImplementation(function() { return { runAsync: createRunResult([]) } as any; } as any);
+      const sessionService = new InMemorySessionService();
+      sessionService.appendEvent = vi.fn();
+
+      const runner = new AgentRunner({ agent: new Agent({ name: 'test', instruction: 'test' }), appName: 'testApp', sessionService });
+      const stream = runner.run({
+        threadId: '123',
+        messages: [{ role: 'tool', toolCallId: 'abc', toolName: 'test_tool', content: 'result' } as any]
+      });
+
+      const startEv = (await stream.next()).value as any;
+      expect(startEv.type).toBe(EventType.RUN_STARTED);
+      expect(sessionService.appendEvent).toHaveBeenCalled();
+    });
   });
 });

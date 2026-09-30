@@ -1,5 +1,5 @@
 import { BaseAgent, Runner, BaseSessionService, App, InMemorySessionService } from '@google/adk';
-import { RunAgentInput, BaseEvent as AgUiEvent, EventType as AgUiEventType } from '@ag-ui/core';
+import { RunAgentInput, BaseEvent as AgUiEvent, EventType as AgUiEventType, RunFinishedEvent } from '@ag-ui/core';
 import { EventTranslator, AdkEvent } from './EventTranslator.js';
 import crypto from 'crypto';
 
@@ -39,24 +39,64 @@ export class AgentRunner {
     // Fallback required by protocol if client sends no threadId
     const threadId = input.threadId || crypto.randomUUID();
     const runId = crypto.randomUUID();
-    const textToRun = this.extractUserText(input);
 
     await this.initializeSession(threadId);
+
+    const session = await this.sessionService.getSession({
+      appName: this.appName,
+      userId: "default_user",
+      sessionId: threadId
+    });
+
+    const lastMessage = input.messages ? input.messages[input.messages.length - 1] : undefined;
+
+    // Inbound Loop: if the client is submitting a tool result, we must map it back to ADK.
+    if (lastMessage && lastMessage.role === 'tool') {
+      const toolMsg = lastMessage as unknown as { toolCallId: string, toolName: string, content: unknown };
+
+      // Append the client result as a FunctionResponse with the *exact* call id
+      await this.sessionService.appendEvent({
+        session: session!,
+        event: {
+          id: toolMsg.toolCallId,
+          invocationId: runId, // Dummy invocationId to satisfy ADK append
+          author: "user",
+          timestamp: Date.now(),
+          content: {
+            role: "user",
+            parts: [{
+              functionResponse: {
+                name: toolMsg.toolName,
+                response: { result: toolMsg.content }
+              }
+            }]
+          }
+        } as unknown as AdkEvent
+      });
+    }
+
+    const textToRun = this.extractUserText(input);
 
     const adkStream = runner.runAsync({
       userId: "default_user",
       sessionId: threadId,
+      runConfig: {
+        // pauseOnToolCalls: true is mandatory to prevent the model from hallucinating
+        // a confirmation over its own unanswered call during SSE StreamingMode.
+        pauseOnToolCalls: true
+      } as unknown as Record<string, unknown>,
       newMessage: {
         role: "user",
-        parts: [{ text: textToRun }]
+        // Re-invoke with an empty-text newMessage if we are resuming from a tool
+        parts: [{ text: (lastMessage && lastMessage.role === 'tool') ? "" : textToRun }]
       }
     });
 
-    yield { type: AgUiEventType.RUN_STARTED, runId, threadId, timestamp: Date.now() } as unknown as AgUiEvent;
+    yield { type: AgUiEventType.RUN_STARTED, runId, threadId, timestamp: Date.now() } as AgUiEvent;
 
     yield* this.translateEventStream(adkStream, runId);
 
-    yield { type: AgUiEventType.RUN_FINISHED, runId, threadId, timestamp: Date.now(), outcome: { type: "success" } } as unknown as AgUiEvent;
+    yield { type: AgUiEventType.RUN_FINISHED, runId, threadId, timestamp: Date.now(), outcome: { type: "success" } } as RunFinishedEvent;
   }
 
   private createRunner(): Runner {

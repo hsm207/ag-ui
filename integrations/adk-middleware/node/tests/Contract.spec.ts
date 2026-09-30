@@ -107,5 +107,41 @@ describe('Full Pipeline Protocol Contract', () => {
 
       expect(() => EventSchema.parse(malformedEvent)).toThrow();
     });
+
+    it('When RUN_FINISHED emits an invalid outcome type, Then EventSchema validation fails', () => {
+      const malformedEvent = {
+        type: 'RUN_FINISHED',
+        runId: 'run-1',
+        threadId: 'thread-1',
+        timestamp: 123456789,
+        outcome: { type: 'nope' }
+      };
+
+      expect(() => EventSchema.parse(malformedEvent)).toThrow();
+    });
+  });
+
+  describe('Given a tool-calling stream', () => {
+    it('When a functionCall is emitted, Then the lifecycle sequencing enforces START -> ARGS -> END', async () => {
+      vi.mocked(Runner).mockImplementation(function() {
+        return { runAsync: createRunResult([REAL_ADK_EVENTS[1]]) } as any;
+      } as any);
+
+      const handler = createAdkEndpoint({ agent: new Agent({ name: 'test', instruction: 't' }), appName: 'testApp', sessionService: new InMemorySessionService() });
+      const res = createMockResponse();
+
+      await handler({ body: { threadId: "test-thread", messages: [{ role: "user", content: "hi" }] } } as any, res);
+
+      const streamChunks = res._getChunks();
+      const agUiEvents = streamChunks.map((chunk: string) => JSON.parse(chunk.replace('data: ', '').trim()));
+
+      const toolStartIdx = agUiEvents.findIndex((e: any) => e.type === 'TOOL_CALL_START');
+      const toolArgsIdx = agUiEvents.findIndex((e: any) => e.type === 'TOOL_CALL_ARGS');
+      const toolEndIdx = agUiEvents.findIndex((e: any) => e.type === 'TOOL_CALL_END');
+
+      expect(toolStartIdx).toBeGreaterThan(-1);
+      expect(toolArgsIdx).toBeGreaterThan(toolStartIdx);
+      expect(toolEndIdx).toBeGreaterThan(toolArgsIdx);
+    });
   });
 });

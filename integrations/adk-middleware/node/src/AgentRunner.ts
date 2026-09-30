@@ -56,7 +56,7 @@ export class AgentRunner {
 
     yield* this.translateEventStream(adkStream, runId);
 
-    yield { type: AgUiEventType.RUN_FINISHED, runId, threadId, timestamp: Date.now(), result: { type: "success" } } as unknown as AgUiEvent;
+    yield { type: AgUiEventType.RUN_FINISHED, runId, threadId, timestamp: Date.now(), outcome: { type: "success" } } as unknown as AgUiEvent;
   }
 
   private createRunner(): Runner {
